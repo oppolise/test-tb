@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>JSON Profiler Export</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 20px;
+            background-color: #f4f4f4;
+            color: #333;
+        }
+        .container {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            color: #333;
+        }
+        p {
+            line-height: 1.6;
+        }
+        .button {
+            display: inline-block;
+            padding: 10px 20px;
+            margin-top: 20px;
+            font-size: 16px;
+            color: #fff;
+            background-color: #007bff;
+            border: none;
+            border-radius: 5px;
+            text-decoration: none;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+        .button:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>JSON Profiler Export Plugin</h1>
+        <p>
+            This plugin allows you to export the PyTorch profiler data from the current log directory
+            into a single JSON file.
+        </p>
+        <p>
+            Click the button below to download the <code>profiler_export.json</code> file.
+            This file will contain processed information including overview, operator statistics,
+            kernel statistics, memory usage, and recommendations.
+        </p>
+        <a href="download_json_export" class="button" download>Download Profiler Data as JSON</a>
+    </div>
+</body>
+</html>
