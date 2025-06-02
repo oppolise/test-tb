@@ -29,14 +29,14 @@ def process_run_data(logdir: str, cache_dir: str):
         "all_recommendations": [],
         "errors": []
     }
-
+    
     # Create a cache directory if it doesn't exist (simplified from plugin's _cache)
     # In a real plugin, this cache would be managed more robustly.
     if not os.path.exists(cache_dir):
         os.makedirs(cache_dir)
 
     trace_file_paths = _get_trace_files(logdir)
-
+    
     if not trace_file_paths:
         logger.warning(f"No trace files found in {logdir}")
         processed_data["errors"].append(f"No trace files found in {logdir}")
@@ -52,13 +52,13 @@ def process_run_data(logdir: str, cache_dir: str):
 
     # For now, let's process the first run found, or all files if structured flatly.
     # A more sophisticated approach would allow selecting a run if multiple exist.
-
+    
     run_profiles = []
 
     for run_cpath, files_in_run in runs.items():
         run_name = os.path.basename(run_cpath) if run_cpath != logdir else os.path.basename(logdir)
         logger.info(f"Processing run: {run_name} from {run_cpath}")
-
+        
         for i, file_path in enumerate(files_in_run):
             worker_name_match = consts.WORKER_PATTERN.match(os.path.basename(file_path))
             if worker_name_match:
@@ -70,18 +70,18 @@ def process_run_data(logdir: str, cache_dir: str):
                 # Fallback worker name if pattern doesn't match
                 worker_name = f"worker_{i}"
                 span_name = None
-
+            
             logger.info(f"Parsing trace file: {file_path} for worker: {worker_name}, span: {span_name}")
             try:
                 # RunProfileData.parse expects worker, span, path, cache_dir
                 # The span here is the iteration/step, not the plugin's span concept.
                 # For simplicity, if not part of filename, we'll use None or a default.
                 profile_data = RunProfileData.parse(worker_name, span_name, file_path, cache_dir)
-
+                
                 generator = RunGenerator(worker_name, span_name, profile_data)
                 run_profile = generator.generate_run_profile()
                 run_profiles.append(run_profile)
-
+                
                 # Store some basic info
                 processed_data["workers"][worker_name] = {
                     "trace_file": file_path,
@@ -96,10 +96,10 @@ def process_run_data(logdir: str, cache_dir: str):
                     "kernel_op_table": run_profile.kernel_op_table, # dict
                     "tc_pie": run_profile.tc_pie, # dict
                     # Memory data needs specific extraction
-                    "memory_summary": None,
+                    "memory_summary": None, 
                     "memory_curve": None,
                     # Trace data might be too large to embed directly; consider path or summary
-                    "trace_file_location": run_profile.trace_file_path
+                    "trace_file_location": run_profile.trace_file_path 
                 }
                 if profile_data.recommendations:
                     processed_data["all_recommendations"].extend(profile_data.recommendations)
@@ -121,9 +121,9 @@ def process_run_data(logdir: str, cache_dir: str):
                 else:
                     processed_data["workers"][worker_name]["status"] = "error"
                     processed_data["workers"][worker_name]["error_message"] = str(e)
-
+                    
     # Deduplicate recommendations
     if processed_data["all_recommendations"]:
         processed_data["all_recommendations"] = list(sorted(set(processed_data["all_recommendations"])))
-
+        
     return processed_data

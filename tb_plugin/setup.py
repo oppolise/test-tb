@@ -78,10 +78,12 @@ setuptools.setup(
     packages=setuptools.find_packages(),
     package_data={
         "torch_tb_profiler": ["static/**"],
+        "json_profiler_export": ["static/**"],
     },
     entry_points={
         "tensorboard_plugins": [
             "torch_profiler = torch_tb_profiler.plugin:TorchProfilerPlugin",
+            "json_export_profiler = tb_plugin.json_profiler_export.plugin:JsonProfilerExportPlugin",
         ],
     },
     python_requires=">=3.6.2",
