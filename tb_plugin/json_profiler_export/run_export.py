@@ -27,7 +27,8 @@ def process_run_data(logdir: str, cache_dir: str):
     processed_data = {
         "workers": {},
         "all_recommendations": [],
-        "errors": []
+        "errors": [],
+        "successfully_processed_files": [] # New list
     }
     
     # Create a cache directory if it doesn't exist (simplified from plugin's _cache)
@@ -81,6 +82,7 @@ def process_run_data(logdir: str, cache_dir: str):
                 generator = RunGenerator(worker_name, span_name, profile_data)
                 run_profile = generator.generate_run_profile()
                 run_profiles.append(run_profile)
+                processed_data["successfully_processed_files"].append(os.path.basename(file_path))
                 
                 # Store some basic info
                 processed_data["workers"][worker_name] = {

@@ -30,23 +30,81 @@ class JsonProfilerExportPlugin(base_plugin.TBPlugin):
 
     def get_plugin_apps(self):
         # Serve a static HTML file for the plugin's frontend
-        # We will create this file in a subsequent step
+        # static/index.html will be read and templated by serve_index_html
+        # Other static assets can be served by static_file_route if needed
         static_path = os.path.join(os.path.dirname(__file__), 'static')
-        
-        # Ensure the static directory exists if we plan to serve files from it
         if not os.path.exists(static_path):
+             # This should ideally be handled by packaging, but as a fallback:
             os.makedirs(static_path)
-        # Create a dummy index.html if it doesn't exist, to be replaced later
-        dummy_index_html_path = os.path.join(static_path, "index.html")
-        if not os.path.exists(dummy_index_html_path):
-            with open(dummy_index_html_path, "w") as f:
-                f.write("<html><body><p>Placeholder page. Real content pending.</p></body></html>")
+            logger.warning(f"Static directory created at {static_path}. It should be part of the package.")
+            # We expect index.html to be present in static dir due to packaging.
+            # No longer creating a dummy index.html here.
 
         return {
-            '/': self.static_file_route, # Serve index.html at the root of the plugin
-            '/index.html': self.static_file_route, # Explicitly serve index.html
+            '/': self.serve_index_html,
+            '/index.html': self.serve_index_html,
             '/download_json_export': self.download_json_export_route,
+            # Example: '/static_assets/<path:filename>': self.static_file_route,
         }
+
+    @wrappers.Request.application
+    def serve_index_html(self, request: werkzeug.Request):
+        try:
+            data_dict = run_export.process_run_data(self._logdir, self._temp_cache_dir)
+            successfully_processed_files = data_dict.get("successfully_processed_files", [])
+            processing_errors = data_dict.get("errors", [])
+
+            file_list_html = "<h3>Processed Files:</h3>"
+            if successfully_processed_files:
+                file_list_html += "<ul>"
+                for filename in successfully_processed_files:
+                    file_list_html += f"<li>{werkzeug.utils.escape(filename)}</li>"
+                file_list_html += "</ul>"
+            else:
+                file_list_html += "<p>No trace files were successfully processed.</p>"
+
+            if processing_errors:
+                file_list_html += "<h3>Processing Errors:</h3><ul>"
+                for error_msg in processing_errors:
+                    file_list_html += f"<li><pre>{werkzeug.utils.escape(error_msg)}</pre></li>"
+                file_list_html += "</ul>"
+
+
+            static_dir = os.path.join(os.path.dirname(__file__), 'static')
+            index_html_path = os.path.join(static_dir, 'index.html')
+
+            if not os.path.exists(index_html_path):
+                logger.error(f"index.html not found at {index_html_path}")
+                # Attempt to create a very basic index.html with placeholder if missing, though it should be packaged.
+                # This is a fallback to prevent complete failure if packaging somehow misses the file.
+                error_html_content = "<html><head><title>Error</title></head><body><h1>Plugin UI Error</h1><p>index.html is missing.</p> <!-- %PROCESSED_FILES_INFO% --> </body></html>"
+                with open(index_html_path, 'w', encoding='utf-8') as f_err:
+                    f_err.write(error_html_content)
+                logger.warning(f"Created a fallback index.html at {index_html_path} as it was missing.")
+                # return werkzeug.exceptions.InternalServerError("Plugin UI file (index.html) not found. It should be part of the package.")
+
+
+            with open(index_html_path, 'r', encoding='utf-8') as f:
+                html_content = f.read()
+            
+            # Replace placeholder with the list of files and errors
+            html_content = html_content.replace("<!-- %PROCESSED_FILES_INFO% -->", file_list_html)
+
+            return werkzeug.Response(
+                html_content,
+                content_type='text/html',
+                headers=self.headers # Use class-defined headers
+            )
+        except Exception as e:
+            logger.error(f"Error serving index.html: {e}", exc_info=True)
+            # Fallback or simple error page
+            error_html = f"<html><body><h1>Error</h1><p>Could not load plugin UI: {werkzeug.utils.escape(str(e))}</p></body></html>"
+            return werkzeug.Response(
+                error_html,
+                content_type='text/html',
+                status=500,
+                headers=self.headers
+            )
 
     def is_active(self):
         """Returns whether there is relevant data for the plugin to process."""
