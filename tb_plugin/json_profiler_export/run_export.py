@@ -3,10 +3,10 @@ import gzip
 import json
 from collections import defaultdict
 
-from tb_plugin.torch_tb_profiler import io, utils, consts
-from tb_plugin.torch_tb_profiler.profiler.data import RunProfileData
-from tb_plugin.torch_tb_profiler.profiler.run_generator import RunGenerator
-from tb_plugin.torch_tb_profiler.run import RunProfile
+from torch_tb_profiler import io, utils, consts
+from torch_tb_profiler.profiler.data import RunProfileData
+from torch_tb_profiler.profiler.run_generator import RunGenerator
+from torch_tb_profiler.run import RunProfile
 
 logger = utils.get_logger()
 

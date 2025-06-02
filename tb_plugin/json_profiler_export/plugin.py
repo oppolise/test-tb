@@ -7,7 +7,7 @@ from werkzeug import wrappers
 
 from tensorboard.plugins import base_plugin
 
-from tb_plugin.torch_tb_profiler import io, utils # For is_chrome_trace_file and get_logger
+from torch_tb_profiler import io, utils # For is_chrome_trace_file and get_logger
 
 # Import the processor from the sibling module
 from . import run_export 
