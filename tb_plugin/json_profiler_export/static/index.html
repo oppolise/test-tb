@@ -37,25 +37,113 @@
         .button:hover {
             background-color: #0056b3;
         }
+        #processedFilesInfo {
+            margin-top: 15px;
+            margin-bottom: 15px;
+            padding: 10px;
+            border: 1px solid #eee;
+            background-color: #f9f9f9;
+        }
+        #processedFilesInfo ul {
+            margin-top: 5px;
+            padding-left: 20px;
+        }
+        #processedFilesInfo pre {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            background-color: #eee;
+            padding: 5px;
+            border-radius: 3px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>JSON Profiler Export Plugin</h1>
         <p>
-            This plugin allows you to export the PyTorch profiler data from the current log directory 
+            This plugin allows you to export the PyTorch profiler data from the current log directory
             into a single JSON file.
         </p>
-        
-        <!-- Placeholder for processed files information -->
-        <!-- %PROCESSED_FILES_INFO% -->
-        
+
+        <div id="processedFilesInfo"><p>Loading processed file information...</p></div>
+
         <p>
-            Click the button below to download the <code>profiler_export.json</code> file. 
-            This file will contain processed information including overview, operator statistics, 
+            Click the button below to download the <code>profiler_export.json</code> file.
+            This file will contain processed information including overview, operator statistics,
             kernel statistics, memory usage, and recommendations.
         </p>
         <a href="download_json_export" class="button" download>Download Profiler Data as JSON</a>
     </div>
+
+    <script>
+        window.addEventListener('DOMContentLoaded', function() {
+            const infoDiv = document.getElementById('processedFilesInfo');
+
+            // API path is relative to the plugin's root.
+            // e.g. if plugin is at /data/plugin/json_export_profiler/,
+            // this will fetch /data/plugin/json_export_profiler/api/processed_info
+            fetch('api/processed_info')
+                .then(response => {
+                    if (!response.ok) {
+                        // Try to get error message from response body if possible
+                        return response.text().then(text => {
+                            let errorDetails = text;
+                            try {
+                                const jsonError = JSON.parse(text);
+                                errorDetails = jsonError.error || jsonError.details || text;
+                            } catch (e) {
+                                // Not JSON, use text as is
+                            }
+                            throw new Error(`HTTP error! status: ${response.status}, details: ${errorDetails}`);
+                        });
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    let html = '';
+                    if (data.successfully_processed_files && data.successfully_processed_files.length > 0) {
+                        html += '<h3>Successfully Processed Trace Files:</h3><ul>';
+                        data.successfully_processed_files.forEach(filename => {
+                            html += `<li>${escapeHtml(filename)}</li>`;
+                        });
+                        html += '</ul>';
+                    } else {
+                        html += '<p>No trace files were successfully processed or found.</p>';
+                    }
+
+                    if (data.errors && data.errors.length > 0) {
+                        html += '<h3>Encountered Errors During Processing:</h3><ul>';
+                        data.errors.forEach(errorMsg => {
+                            html += `<li><pre>${escapeHtml(errorMsg)}</pre></li>`;
+                        });
+                        html += '</ul>';
+                    } else {
+                        html += '<p>No processing errors reported.</p>';
+                    }
+                    infoDiv.innerHTML = html;
+                })
+                .catch(error => {
+                    console.error('Error fetching or parsing processed info:', error);
+                    infoDiv.innerHTML = `<p style="color: red;">Error loading processed file information: ${escapeHtml(error.message)}</p>`;
+                });
+        });
+
+        // Function to escape HTML special characters
+        function escapeHtml(unsafe) {
+            if (typeof unsafe !== 'string') {
+                try {
+                    unsafe = JSON.stringify(unsafe);
+                } catch (e) {
+                    unsafe = String(unsafe); // Fallback
+                }
+            }
+            return unsafe
+                 .replace(/&/g, "&amp;")
+                 .replace(/</g, "&lt;")
+                 .replace(/>/g, "&gt;")
+                 .replace(/"/g, "&quot;")
+                 .replace(/'/g, "&#039;");
+        }
+    </script>
 </body>
 </html>
