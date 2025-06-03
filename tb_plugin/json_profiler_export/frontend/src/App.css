@@ -1,0 +1,172 @@
+/* tb_plugin/json_profiler_export/frontend/src/App.css */
+body, html, #root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: sans-serif;
+  background-color: #f4f4f4; /* Match TensorBoard's typical background */
+  color: #333;
+}
+
+.app-container {
+  display: flex;
+  height: 100vh; /* Full viewport height */
+}
+
+.sidebar {
+  width: 250px; /* Fixed width for the sidebar */
+  background-color: #e9e9e9; /* Light grey, common for sidebars */
+  padding: 15px;
+  height: 100%; /* Full height of parent */
+  overflow-y: auto; /* Scroll if content overflows */
+  border-right: 1px solid #ccc;
+  box-sizing: border-box;
+}
+
+.sidebar-section {
+  margin-bottom: 20px;
+}
+
+.sidebar-section h2 {
+  font-size: 1.1em; /* Slightly smaller than main h1 */
+  margin-top: 0;
+  margin-bottom: 10px;
+  color: #111;
+  border-bottom: 1px solid #ccc;
+  padding-bottom: 5px;
+}
+
+.sidebar-section ul {
+  list-style-type: none;
+  padding: 0;
+  margin: 0;
+}
+
+.sidebar-section ul .view-item {
+  padding: 8px 5px;
+  cursor: pointer;
+  border-radius: 3px;
+  margin-bottom: 4px;
+}
+
+.sidebar-section ul .view-item:hover {
+  background-color: #ddd;
+}
+
+.sidebar-section ul .view-item.active {
+  background-color: #007bff; /* Blue for active item */
+  color: white;
+}
+
+#runNamePlaceholder, #workersListPlaceholder {
+  font-size: 0.9em;
+  padding-left: 5px;
+  word-wrap: break-word;
+}
+
+#downloadJsonButton {
+  display: inline-block;
+  padding: 8px 15px;
+  font-size: 0.9em;
+  color: #fff;
+  background-color: #007bff;
+  border: none;
+  border-radius: 5px;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+  width: calc(100% - 10px); /* Adjust width to fit padding */
+  box-sizing: border-box;
+  margin-left: 5px;
+  margin-right: 5px;
+  text-align: center;
+}
+
+#downloadJsonButton:hover {
+  background-color: #0056b3;
+}
+
+
+.main-content {
+  flex-grow: 1; /* Takes remaining width */
+  padding: 20px;
+  overflow-y: auto; /* Scroll if content overflows */
+  background-color: #fff; /* White background for content */
+  box-sizing: border-box;
+}
+
+.main-content h1 {
+  margin-top: 0;
+  font-size: 1.5em;
+}
+
+#mainViewContentPlaceholder {
+  margin-top: 15px;
+  padding: 10px;
+  border: 1px solid #eee;
+  background-color: #f9f9f9;
+  white-space: pre-wrap;
+  font-family: monospace;
+  min-height: 100px;
+}
+
+#errorsPlaceholder pre {
+  color: red;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  background-color: #ffe0e0;
+  padding: 10px;
+  border-radius: 4px;
+  border: 1px solid #ffc0c0;
+}
+
+/* ... (existing CSS from previous App.css) ... */
+
+.run-list, .worker-list {
+  list-style-type: none; /* Remove default bullets */
+  padding-left: 10px;
+  font-size: 0.9em;
+}
+
+.run-list li, .worker-list li {
+  padding: 3px 0;
+  word-wrap: break-word;
+}
+
+.run-list li.active-run-item {
+  font-weight: bold;
+  background-color: #d0e0ff; /* Light blue highlight for active run */
+  padding-left: 3px;
+  border-radius: 2px;
+}
+.run-list li:not(.active-run-item):hover {
+  background-color: #e0e0e0;
+  cursor: pointer;
+}
+
+
+.error-display {
+  margin-bottom: 15px;
+}
+
+.error-display h3 {
+  color: red;
+  font-size: 1.1em;
+  margin-bottom: 5px;
+}
+
+.error-display ul {
+  list-style-type: none;
+  padding-left: 0;
+}
+
+.error-display li pre {
+  color: red;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  background-color: #ffe0e0;
+  padding: 10px;
+  border-radius: 4px;
+  border: 1px solid #ffc0c0;
+  font-size: 0.9em;
+}
