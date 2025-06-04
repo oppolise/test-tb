@@ -28,28 +28,34 @@
             border-bottom: 1px solid #ccc;
             padding-bottom: 5px;
         }
-        .sidebar ul {
+        .sidebar ul { /* General style for ULs in sidebar, can be overridden by .sidebar-list */
             list-style-type: none;
             padding: 0;
-            margin: 0 0 20px 0;
-        }
-        .sidebar ul li {
-            padding: 8px 0px;
-            cursor: pointer;
-            border-radius: 3px;
-        }
-        .sidebar ul li:hover:not(.active) {
-            background-color: #ddd;
-        }
-        .sidebar ul li.active {
-            background-color: #007bff;
-            color: white;
-            padding-left: 5px;
+            margin: 0 0 10px 0; /* Reduced bottom margin */
         }
         .sidebar .run-info, .sidebar .worker-info {
             font-size: 0.9em;
             word-wrap: break-word;
-            padding-left: 10px;
+        }
+        .sidebar-list {
+          list-style-type: none;
+          padding-left: 10px;
+          margin-top: 5px;
+        }
+        .sidebar-list li {
+          padding: 6px 0px; /* Adjusted padding */
+          cursor: pointer;
+          border-radius: 3px;
+          font-size: 0.9em;
+          word-wrap: break-word; /* Ensure long names wrap */
+        }
+        .sidebar-list li:hover:not(.active) {
+          background-color: #d8d8d8;
+        }
+        .sidebar-list li.active {
+          background-color: #007bff;
+          color: white;
+          padding-left: 8px; /* Keep padding for active state */
         }
 
         .main-content {
@@ -66,7 +72,7 @@
             padding: 10px;
             border: 1px solid #eee;
             background-color: #f9f9f9;
-            white-space: pre-wrap; /* To respect newlines and spaces */
+            white-space: pre-wrap;
             font-family: monospace;
             min-height: 100px;
         }
@@ -103,15 +109,21 @@
 <body>
     <div class="sidebar">
         <h2>Runs</h2>
-        <div id="runName" class="run-info"><p>Loading run...</p></div>
+        <div id="mainLogdirName" class="run-info" style="margin-bottom: 5px; font-weight:bold;"><p>Loading logdir...</p></div>
+        <div id="runsListSection">
+            <p style="font-size:0.9em; padding-left:5px;">Detected Sub-Runs:</p>
+            <ul id="runsListDisplay" class="sidebar-list"></ul>
+        </div>
 
         <h2>Views</h2>
-        <ul id="viewsList">
+        <ul id="viewsList" class="sidebar-list"> <!-- Added sidebar-list class for consistency -->
             <li id="viewDag">Dag</li>
         </ul>
 
         <h2>Workers</h2>
-        <div id="workersList" class="worker-info"><p>Loading workers...</p></div>
+        <div id="workersListContainer">
+             <ul id="workersListDisplay" class="sidebar-list worker-info"><p>Loading workers...</p></ul>
+        </div>
 
         <hr>
         <a href="download_json_export" class="button" download>Download Full JSON</a>
@@ -126,115 +138,188 @@
     </div>
 
     <script>
-        let fullJsonData = null; // To store the fetched JSON data globally
+        let fullJsonData = null;
+        let availableRuns = [];
+        let currentSelectedRun = null;
+        let currentSelectedWorker = null;
 
         // Function to escape HTML special characters
         function escapeHtml(unsafe) {
             if (typeof unsafe !== 'string') {
-                try {
-                    unsafe = JSON.stringify(unsafe);
-                } catch (e) {
-                    unsafe = String(unsafe); // Fallback
-                }
+                try { unsafe = JSON.stringify(unsafe); }
+                catch (e) { unsafe = String(unsafe); }
             }
-            return unsafe
-                 .replace(/&/g, "&amp;")
-                 .replace(/</g, "&lt;")
-                 .replace(/>/g, "&gt;")
-                 .replace(/"/g, "&quot;")
-                 .replace(/'/g, "&#039;");
+            return unsafe.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
         }
 
         window.addEventListener('DOMContentLoaded', function() {
-            const runNameDiv = document.getElementById('runName');
-            const viewsListUl = document.getElementById('viewsList');
-            const workersListDiv = document.getElementById('workersList');
+            const mainLogdirNameDiv = document.getElementById('mainLogdirName');
+            const runsListDisplayUl = document.getElementById('runsListDisplay');
+            const viewsListUl = document.getElementById('viewsList'); // Already had #viewsList, ensure it's used if needed
+            const workersListDisplayUl = document.getElementById('workersListDisplay');
             const dagViewContentDiv = document.getElementById('dagViewContent');
             const errorsContainerDiv = document.getElementById('errorsContainer');
-            const viewDagLi = document.getElementById('viewDag');
+            const viewDagLi = document.getElementById('viewDag'); // This is the specific Dag view li
 
+            // Fetch Runs
+            fetch('api/runs')
+                .then(response => {
+                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status} for /api/runs`);
+                    return response.json();
+                })
+                .then(runsData => {
+                    availableRuns = runsData || [];
+                    let runsHtml = '';
+                    if (availableRuns.length > 0) {
+                        availableRuns.forEach(runName => {
+                            runsHtml += `<li data-run-name="${escapeHtml(runName)}" class="run-item">${escapeHtml(runName)}</li>`;
+                        });
+                    } else {
+                        runsHtml = '<li><p style="padding-left:0; font-style:italic;">No sub-runs detected.</p></li>';
+                    }
+                    if(runsListDisplayUl) runsListDisplayUl.innerHTML = runsHtml;
+
+                    document.querySelectorAll('#runsListDisplay .run-item').forEach(item => {
+                        item.addEventListener('click', function() {
+                            const selectedRunName = this.getAttribute('data-run-name');
+                            currentSelectedRun = selectedRunName;
+                            currentSelectedWorker = null;
+                            console.log("Selected run:", selectedRunName);
+
+                            document.querySelectorAll('#runsListDisplay .run-item').forEach(r => r.classList.remove('active'));
+                            this.classList.add('active');
+                            document.querySelectorAll('#workersListDisplay .worker-item').forEach(w => w.classList.remove('active'));
+
+                            if (mainLogdirNameDiv && fullJsonData && fullJsonData.source_logdir) {
+                                mainLogdirNameDiv.innerHTML = `<p><b>Logdir:</b> ${escapeHtml(fullJsonData.source_logdir)}<br><b>Selected Run:</b> ${escapeHtml(selectedRunName || 'Overall')}</p>`;
+                            }
+                            // TODO: Fetch data for this specific run, or update view based on pre-loaded fullJsonData if it contains multi-run details.
+                            // For now, just indicates selection.
+                            dagViewContentDiv.innerHTML = `<p>Selected run: ${escapeHtml(selectedRunName)}. Worker data or overall run data view not yet implemented for specific run selection.</p>`;
+                            if(workersListDisplayUl) workersListDisplayUl.innerHTML = '<li><p style="padding-left:0; font-style:italic;">Select a run to see its workers (not yet implemented).</p></li>';
+
+                        });
+                    });
+                })
+                .catch(error => {
+                    console.error('Error fetching runs:', error);
+                    if(runsListDisplayUl) runsListDisplayUl.innerHTML = `<li><p class="error-message" style="padding-left:0;">Error: ${escapeHtml(error.message)}</p></li>`;
+                });
+
+            // Fetch Initial Processed Info (Overall Logdir)
             fetch('api/processed_info')
                 .then(response => {
                     if (!response.ok) {
                         return response.text().then(text => {
-                            let errorDetails = text;
-                            try {
-                                const jsonError = JSON.parse(text);
-                                errorDetails = jsonError.error || jsonError.details || text;
-                            } catch (e) { /* Not JSON, use text as is */ }
-                            throw new Error(`HTTP error! status: ${response.status}, details: ${errorDetails}`);
+                            let ed = text; try { const je = JSON.parse(text); ed = je.error || je.details || text; } catch (e) {}
+                            throw new Error(`HTTP error! status: ${response.status}, details: ${ed} for /api/processed_info`);
                         });
                     }
                     return response.json();
                 })
                 .then(data => {
-                    fullJsonData = data; // Store for later use by views
-
-                    // Populate Runs
+                    fullJsonData = data;
                     if (data.source_logdir) {
-                        runNameDiv.innerHTML = `<p>${escapeHtml(data.source_logdir)}</p>`;
+                        if (!currentSelectedRun && mainLogdirNameDiv) {
+                             mainLogdirNameDiv.innerHTML = `<p><b>Logdir:</b> ${escapeHtml(data.source_logdir)}</p>`;
+                        }
                     } else {
-                        runNameDiv.innerHTML = '<p>N/A</p>';
+                        if(mainLogdirNameDiv) mainLogdirNameDiv.innerHTML = '<p class="error-message">Logdir N/A</p>';
                     }
 
-                    // Populate Workers
                     let workersHtml = '';
                     if (data.successfully_processed_files && data.successfully_processed_files.length > 0) {
-                        workersHtml += '<ul>';
                         data.successfully_processed_files.forEach(filename => {
-                            workersHtml += `<li>${escapeHtml(filename)}</li>`;
+                            workersHtml += `<li data-worker-name="${escapeHtml(filename)}" class="worker-item">${escapeHtml(filename)}</li>`;
                         });
-                        workersHtml += '</ul>';
                     } else {
-                        workersHtml = '<p>No workers found or processed.</p>';
+                        workersHtml = '<li><p style="padding-left:0; font-style:italic;">No workers found (for overall logdir).</p></li>';
                     }
-                    workersListDiv.innerHTML = workersHtml;
+                    if(workersListDisplayUl) workersListDisplayUl.innerHTML = workersHtml;
 
-                    // Populate Errors (if any)
-                    if (data.errors && data.errors.length > 0) {
-                        let errorsHtml = '<h3 class="error-message">Processing Errors:</h3><ul class="processing-errors-list">';
-                        data.errors.forEach(errorMsg => {
-                            errorsHtml += `<li><pre>${escapeHtml(errorMsg)}</pre></li>`;
+                    document.querySelectorAll('#workersListDisplay .worker-item').forEach(item => {
+                        item.addEventListener('click', function() {
+                            const selectedWorkerName = this.getAttribute('data-worker-name');
+                            currentSelectedWorker = selectedWorkerName;
+                            console.log("Selected worker:", selectedWorkerName);
+
+                            document.querySelectorAll('#workersListDisplay .worker-item').forEach(w => w.classList.remove('active'));
+                            this.classList.add('active');
+                            // Update selected run display if a worker implies a run (not the case with current overall data)
+                            if (!currentSelectedRun && mainLogdirNameDiv && fullJsonData && fullJsonData.source_logdir) {
+                                mainLogdirNameDiv.innerHTML = `<p><b>Logdir:</b> ${escapeHtml(fullJsonData.source_logdir)}<br><b>Selected Worker:</b> ${escapeHtml(selectedWorkerName)} (from overall logdir)</p>`;
+                            }
+
+
+                            if (fullJsonData && fullJsonData.workers && fullJsonData.workers[selectedWorkerName]) {
+                                const workerData = fullJsonData.workers[selectedWorkerName];
+                                try {
+                                    const jsonString = JSON.stringify(workerData, null, 2);
+                                    const lines = jsonString.split('\n');
+                                    const first10Lines = lines.slice(0, 10).join('\n');
+                                    dagViewContentDiv.textContent = `Data for worker ${escapeHtml(selectedWorkerName)} (first 10 lines):\n${first10Lines}`;
+                                    if (lines.length > 10) dagViewContentDiv.textContent += '\n... (and more)';
+
+                                    document.querySelectorAll('#viewsList li').forEach(li => li.classList.remove('active'));
+                                    if(viewDagLi) viewDagLi.classList.add('active'); // Activate Dag view when worker is clicked
+                                } catch (e) {
+                                    dagViewContentDiv.textContent = `Error processing JSON for worker ${escapeHtml(selectedWorkerName)}: ${escapeHtml(e.message)}`;
+                                }
+                            } else if (selectedWorkerName) {
+                                dagViewContentDiv.textContent = `No specific data in fullJsonData.workers for worker ${escapeHtml(selectedWorkerName)}.`;
+                            }
                         });
+                    });
+
+                    if (data.errors && data.errors.length > 0) {
+                        let errorsHtml = '<h3 class="error-message">Processing Errors (Overall Logdir):</h3><ul class="processing-errors-list">';
+                        data.errors.forEach(errorMsg => { errorsHtml += `<li><pre>${escapeHtml(errorMsg)}</pre></li>`; });
                         errorsHtml += '</ul>';
                         errorsContainerDiv.innerHTML = errorsHtml;
                     }
-
-
-                    // Initial message for Dag view (or clear it)
-                    dagViewContentDiv.innerHTML = '<p>Click on "Dag" view to display JSON data snippet.</p>';
-
+                    dagViewContentDiv.innerHTML = '<p>Click "Dag" view for overall logdir data, or select a worker.</p>';
                 })
                 .catch(error => {
                     console.error('Error fetching initial info:', error);
                     const errorText = `<p class="error-message">Error loading initial data: ${escapeHtml(error.message)}</p>`;
-                    runNameDiv.innerHTML = errorText;
-                    workersListDiv.innerHTML = ''; // Clear workers list on error
-                    errorsContainerDiv.innerHTML = errorText; // Show error in main area too
-                    dagViewContentDiv.innerHTML = '';
+                    if(mainLogdirNameDiv) mainLogdirNameDiv.innerHTML = errorText;
+                    if(workersListDisplayUl) workersListDisplayUl.innerHTML = '';
+                    if(errorsContainerDiv) errorsContainerDiv.innerHTML = errorText;
+                    if(dagViewContentDiv) dagViewContentDiv.innerHTML = '';
                 });
 
-            // Attach event listener for Dag view
             viewDagLi.addEventListener('click', function() {
-                // Highlight active view
                 document.querySelectorAll('#viewsList li').forEach(li => li.classList.remove('active'));
-                viewDagLi.classList.add('active');
+                if(viewDagLi) viewDagLi.classList.add('active');
 
-                if (fullJsonData) {
+                let dataToShow = null;
+                let dataType = "Overall Logdir";
+
+                if (currentSelectedWorker && fullJsonData && fullJsonData.workers && fullJsonData.workers[currentSelectedWorker]) {
+                    dataToShow = fullJsonData.workers[currentSelectedWorker];
+                    dataType = `Worker: ${escapeHtml(currentSelectedWorker)}`;
+                    document.querySelectorAll('#workersListDisplay .worker-item').forEach(w => {
+                        if (w.getAttribute('data-worker-name') === currentSelectedWorker) w.classList.add('active');
+                        else w.classList.remove('active');
+                    });
+                } else if (fullJsonData) {
+                    dataToShow = fullJsonData;
+                    document.querySelectorAll('#workersListDisplay .worker-item').forEach(w => w.classList.remove('active'));
+                    currentSelectedWorker = null; // Ensure worker is deselected if showing overall
+                }
+
+                if (dataToShow) {
                     try {
-                        const jsonString = JSON.stringify(fullJsonData, null, 2); // Pretty print
+                        const jsonString = JSON.stringify(dataToShow, null, 2);
                         const lines = jsonString.split('\n');
                         const first10Lines = lines.slice(0, 10).join('\n');
-                        dagViewContentDiv.textContent = first10Lines; // Use textContent for pre-like display
-                        if (lines.length > 10) {
-                            dagViewContentDiv.textContent += '\n... (and more)';
-                        }
+                        dagViewContentDiv.textContent = `${dataType} Data (first 10 lines of JSON):\n${first10Lines}`;
+                        if (lines.length > 10) dagViewContentDiv.textContent += '\n... (and more)';
                     } catch (e) {
-                        dagViewContentDiv.textContent = `Error processing JSON data: ${escapeHtml(e.message)}`;
-                        console.error("Error stringifying or slicing JSON for Dag view:", e);
+                        dagViewContentDiv.textContent = `Error processing JSON for ${dataType}: ${escapeHtml(e.message)}`;
                     }
                 } else {
-                    dagViewContentDiv.textContent = 'Data not yet loaded. Please wait or try refreshing.';
+                    dagViewContentDiv.textContent = 'Data not yet loaded. Please wait or select a run/worker.';
                 }
             });
         });

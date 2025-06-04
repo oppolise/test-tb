@@ -22,7 +22,6 @@ def get_libkineto_cupti_srcs(with_api = True):
         "src/Demangle.cpp",
         "src/EventProfiler.cpp",
         "src/EventProfilerController.cpp",
-        "src/KernelRegistry.cpp",
         "src/WeakSymbols.cpp",
         "src/cupti_strings.cpp",
     ] + (get_libkineto_cpu_only_srcs(with_api))

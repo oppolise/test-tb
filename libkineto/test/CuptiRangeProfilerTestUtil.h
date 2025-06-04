@@ -108,9 +108,8 @@ inline void simulateCudaContextDestroy(CUcontext context, uint32_t dev) {
 
 inline void simulateKernelLaunch(
     CUcontext context,
-    const std::string& kernelName,
-    uint64_t correlation_id) {
-  testing::trackCudaKernelLaunch(context, kernelName.c_str(), correlation_id);
+    const std::string& kernelName) {
+  testing::trackCudaKernelLaunch(context, kernelName.c_str());
 }
 
 #endif // HAS_CUPTI_RANGE_PROFILER
