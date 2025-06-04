@@ -47,7 +47,133 @@ class JsonProfilerExportPlugin(base_plugin.TBPlugin):
             '/index.js': self.static_file_route,   # Serves static/index.js
             '/download_json_export': self.download_json_export_route,
             '/api/processed_info': self.processed_info_route,
+            '/api/runs': self._serve_runs_api,  # New route for discovering runs
+            '/api/workers': self._serve_workers_api, # New route for getting workers in a run
+            '/api/data': self._serve_data_api, # New route for getting data for a specific worker
         }
+
+    @wrappers.Request.application
+    def _serve_data_api(self, request: werkzeug.Request):
+        """Serves detailed profile data for a specific worker in a run."""
+        run_name = request.args.get('run')
+        worker_identifier = request.args.get('worker')
+
+        if not run_name or not worker_identifier:
+            logger.warning("/api/data: Missing 'run' or 'worker' query parameter.")
+            error_response = json.dumps({"error": "Missing 'run' or 'worker' query parameter"})
+            return werkzeug.Response(
+                error_response,
+                content_type='application/json',
+                status=400, # Bad Request
+                headers=self.headers
+            )
+
+        try:
+            # self._temp_cache_dir is used as the cache_dir for parsing
+            profile_data = run_export.get_profile_data_for_worker(
+                self._logdir,
+                run_name,
+                worker_identifier,
+                self._temp_cache_dir 
+            )
+            
+            # get_profile_data_for_worker returns a dict, which might itself indicate an error
+            # (e.g. {"status": "error", ...}). We'll return this dict as is.
+            # If the data indicates an error, the client can interpret it.
+            # The HTTP status code will be 200 OK if the function completed,
+            # or 500 if an unexpected exception occurred in this handler.
+            
+            json_payload = json.dumps(profile_data)
+            return werkzeug.Response(
+                json_payload,
+                content_type='application/json',
+                headers=self.headers
+            )
+        except Exception as e:
+            logger.error(f"Error in /api/data route for run '{run_name}', worker '{worker_identifier}': {e}", exc_info=True)
+            error_response = json.dumps({
+                "error": f"Failed to get profile data for run '{run_name}', worker '{worker_identifier}'.",
+                "details": str(e)
+            })
+            return werkzeug.Response(
+                error_response,
+                content_type='application/json',
+                status=500, # Internal Server Error
+                headers=self.headers
+            )
+
+    @wrappers.Request.application
+    def _serve_workers_api(self, request: werkzeug.Request):
+        """Serves a list of worker identifiers for a given run."""
+        run_name = request.args.get('run')
+        if not run_name:
+            logger.warning("/api/workers: Missing 'run' query parameter.")
+            error_response = json.dumps({"error": "Missing 'run' query parameter"})
+            return werkzeug.Response(
+                error_response,
+                content_type='application/json',
+                status=400, # Bad Request
+                headers=self.headers
+            )
+
+        try:
+            worker_identifiers = run_export.get_workers_for_run(self._logdir, run_name)
+            
+            if not isinstance(worker_identifiers, list):
+                logger.error(f"/api/workers: get_workers_for_run returned type {type(worker_identifiers)}, expected list. Forcing to empty list.")
+                worker_identifiers = []
+                # Or, alternatively, raise an internal error:
+                # raise ValueError(f"get_workers_for_run returned unexpected type: {type(worker_identifiers)}")
+
+            json_payload = json.dumps(worker_identifiers)
+            return werkzeug.Response(
+                json_payload,
+                content_type='application/json',
+                headers=self.headers
+            )
+        except Exception as e:
+            logger.error(f"Error in /api/workers route for run '{run_name}': {e}", exc_info=True)
+            error_response = json.dumps({
+                "error": f"Failed to get workers for run '{run_name}'.",
+                "details": str(e)
+            })
+            return werkzeug.Response(
+                error_response,
+                content_type='application/json',
+                status=500,
+                headers=self.headers
+            )
+
+    @wrappers.Request.application
+    def _serve_runs_api(self, request: werkzeug.Request):
+        """Serves a list of available runs."""
+        try:
+            runs = run_export.discover_runs(self._logdir)
+            # Ensure runs is a list for valid JSON, even if empty or None from discover_runs
+            if not isinstance(runs, list):
+                logger.error(f"/api/runs: discover_runs returned type {type(runs)}, expected list. Forcing to empty list.")
+                runs = [] 
+                # Or, alternatively, raise an internal error:
+                # raise ValueError(f"discover_runs returned unexpected type: {type(runs)}")
+
+            json_payload = json.dumps(runs)
+            return werkzeug.Response(
+                json_payload,
+                content_type='application/json',
+                headers=self.headers
+            )
+        except Exception as e:
+            logger.error(f"Error in /api/runs route: {e}", exc_info=True)
+            error_response = json.dumps({
+                "error": "Failed to discover runs.",
+                "details": str(e)
+            })
+            return werkzeug.Response(
+                error_response,
+                content_type='application/json',
+                status=500,
+                headers=self.headers
+            )
 
     @wrappers.Request.application
     def processed_info_route(self, request: werkzeug.Request):
