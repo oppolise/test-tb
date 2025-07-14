@@ -1,0 +1,234 @@
+# การวิเคราะห์โค้ด loader.py อย่างละเอียด
+
+## 1. ภาพรวมของโค้ด
+โค้ดนี้เป็นส่วนหนึ่งของ TensorBoard Profiler Plugin สำหรับ PyTorch ทำหน้าที่โหลดและวิเคราะห์ข้อมูล profiling จากการทำงานแบบ distributed training
+
+## 2. การ Import และการตั้งค่าเริ่มต้น
+```python
+import bisect  # สำหรับเพิ่มข้อมูลแบบเรียงลำดับ
+import os     # จัดการระบบไฟล์
+import sys    # ฟังก์ชันระบบ
+from collections import defaultdict  # dict ที่สร้าง default value อัตโนมัติ
+from typing import List, Tuple      # type hints
+```
+
+นำเข้าโมดูลภายในโปรเจค:
+```python
+from .. import consts, io, utils  # ค่าคงที่, การจัดการไฟล์, ฟังก์ชันช่วยเหลือ
+from ..multiprocessing import Process, Queue  # สำหรับการทำงานแบบขนาน
+from ..run import Run, RunProfile  # คลาสเก็บข้อมูล profiling
+from .data import DistributedRunProfileData, RunProfileData  # ข้อมูล profiling แบบ distributed
+from .node import CommunicationNode  # โหนดสำหรับการสื่อสาร
+from .run_generator import DistributedRunGenerator, RunGenerator  # สร้าง profile
+```
+## 3. คลาส RunLoader
+
+### 3.1 Constructor
+```python
+def __init__(self, name, run_dir, caches: io.Cache):
+    self.run_name = name     # ชื่อของการ run
+    self.run_dir = run_dir   # directory ที่เก็บไฟล์ trace
+    self.caches = caches     # cache สำหรับเก็บไฟล์ชั่วคราว
+    self.queue = Queue()     # queue สำหรับส่งข้อมูลระหว่าง process
+```
+
+### 3.2 เมธอด load()
+เมธอดหลักสำหรับโหลดและประมวลผลข้อมูล profiling
+
+1. การค้นหาไฟล์ worker:
+```python
+workers = []
+spans_by_workers = defaultdict(list)
+for path in io.listdir(self.run_dir):
+    if io.isdir(io.join(self.run_dir, path)):
+        continue
+    match = consts.WORKER_PATTERN.match(path)
+    if not match:
+        continue
+```
+
+ตัวอย่าง:
+- ชื่อไฟล์: "worker0.span123.json"
+- worker = "0"
+- span = "123"
+
+2. การจัดการ span:
+```python
+    worker = match.group(1)
+    span = match.group(2)
+    if span is not None:
+        span = span[1:]  # ตัด . ออกจากหน้า span
+        bisect.insort(spans_by_workers[worker], span)
+    workers.append((worker, span, path))
+```
+
+3. สร้าง index map สำหรับ span:
+```python
+span_index_map = {}
+for worker, span_array in spans_by_workers.items():
+    for i, span in enumerate(span_array, 1):
+        span_index_map[(worker, span)] = i
+```
+
+4. ประมวลผลข้อมูลแบบขนาน:
+```python
+for worker, span, path in workers:
+    span_index = None if span is None else span_index_map[(worker, span)]
+    p = Process(target=self._process_data, args=(worker, span_index, path))
+    p.start()
+```
+
+5. รวบรวมผลลัพธ์:
+```python
+distributed_run = Run(self.run_name, self.run_dir)
+run = Run(self.run_name, self.run_dir)
+num_items = len(workers)
+while num_items > 0:
+    item: Tuple[RunProfile, DistributedRunProfileData] = self.queue.get()
+    num_items -= 1
+    r, d = item
+    if r is not None:
+        run.add_profile(r)
+    if d is not None:
+        distributed_run.add_profile(d)
+```
+
+### 3.3 เมธอด _process_data()
+```python
+def _process_data(self, worker, span, path):
+    try:
+        local_file = self.caches.get_remote_cache(io.join(self.run_dir, path))
+        data = RunProfileData.parse(worker, span, local_file, self.caches.cache_dir)
+        
+        generator = RunGenerator(worker, span, data)
+        profile = generator.generate_run_profile()
+        dist_data = DistributedRunProfileData(data)
+        
+        self.queue.put((profile, dist_data))
+    except Exception as ex:
+        logger.warning('Failed to parse profile data...')
+        self.queue.put((None, None))
+```
+
+### 3.4 เมธอด _process_spans()
+```python
+def _process_spans(self, distributed_run: Run):
+    spans = distributed_run.get_spans()
+    if spans is None:
+        return [self._process_distributed_profiles(distributed_run.get_profiles(), None)]
+    else:
+        span_profiles = []
+        for span in spans:
+            profiles = distributed_run.get_profiles(span=span)
+            p = self._process_distributed_profiles(profiles, span)
+            if p is not None:
+                span_profiles.append(p)
+        return span_profiles
+```
+
+### 3.5 เมธอด _process_distributed_profiles()
+```python
+def _process_distributed_profiles(self, profiles: List[DistributedRunProfileData], span):
+    has_communication = True
+    comm_node_lists: List[List[CommunicationNode]] = []
+    
+    # ตรวจสอบการสื่อสารระหว่าง worker
+    for data in profiles:
+        if data.has_communication and data.comm_node_list:
+            comm_node_lists.append(data.comm_node_list)
+        else:
+            has_communication = False
+            
+    # คำนวณเวลาการสื่อสารจริง
+    worker_num = len(comm_node_lists)
+    for i, node in enumerate(comm_node_lists[0]):
+        kernel_range_size = len(node.kernel_ranges)
+        for j in range(kernel_range_size):
+            min_range = sys.maxsize
+            for k in range(worker_num):
+                kernel_ranges = comm_node_lists[k][i].kernel_ranges
+                if kernel_ranges:
+                    if kernel_ranges[j][1] - kernel_ranges[j][0] < min_range:
+                        min_range = kernel_ranges[j][1] - kernel_ranges[j][0]
+                        
+            # บันทึกเวลาการสื่อสารจริง
+            for k in range(worker_num):
+                kernel_range = comm_node_lists[k][i].kernel_ranges[j]
+                comm_node_lists[k][i].real_time_ranges.append(
+                    (kernel_range[1] - min_range, kernel_range[1])
+                )
+```
+
+## 4. ตัวอย่างการใช้งาน
+
+```python
+# สร้าง RunLoader
+loader = RunLoader("training_run1", "/path/to/traces", cache_manager)
+
+# โหลดและประมวลผลข้อมูล
+run = loader.load()
+```
+
+## 5. ผลลัพธ์ที่ได้
+
+1. สำหรับแต่ละ worker:
+```python
+{
+    'worker0': {
+        'spans': ['123', '124'],
+        'profiles': [RunProfile, RunProfile],
+        'distributed_data': DistributedRunProfileData
+    },
+    'worker1': {
+        'spans': ['123', '124'],
+        'profiles': [RunProfile, RunProfile],
+        'distributed_data': DistributedRunProfileData
+    }
+}
+```
+
+2. ข้อมูลการสื่อสาร:
+```python
+{
+    'communication_nodes': [
+        {
+            'kernel_ranges': [(start1, end1), (start2, end2)],
+            'real_time_ranges': [(real_start1, real_end1), (real_start2, real_end2)]
+        }
+    ]
+}
+```
+
+## 6. การจัดการข้อผิดพลาด
+
+1. ไฟล์เสียหาย:
+```python
+try:
+    data = RunProfileData.parse(...)
+except Exception:
+    self.queue.put((None, None))
+```
+
+2. การสื่อสารไม่ตรงกัน:
+```python
+if len(comm_node_lists[-1]) != len(comm_node_lists[0]):
+    has_communication = False
+    return None
+```
+
+## 7. ข้อควรระวัง
+
+1. Memory Usage:
+- ข้อมูล profiling อาจมีขนาดใหญ่
+- ใช้ multiprocessing เพื่อกระจายการทำงาน
+- มีการใช้ cache เพื่อลดการใช้หน่วยความจำ
+
+2. Error Handling:
+- มีการจัดการข้อผิดพลาดทุกขั้นตอน
+- ล้มเหลวได้อย่างสง่างาม (graceful failure)
+- มีการบันทึก log เพื่อติดตามปัญหา
+
+3. Performance:
+- ใช้ multiprocessing สำหรับการประมวลผลขนาน
+- มีการ cache ไฟล์เพื่อเพิ่มประสิทธิภาพ
+- ใช้ Queue สำหรับการสื่อสารระหว่าง process
